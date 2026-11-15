@@ -28,7 +28,7 @@ const STEPS = [
 ];
 
 export function BookingWizard({ initialExperienceSlug }: BookingWizardProps) {
-  const { data } = useVenue();
+  const { data, isStaticMode } = useVenue();
   const experiences = data?.experiences || [];
   const settings = data?.settings;
   const razorpayConfigured = Boolean(data?.razorpayConfigured);
@@ -104,23 +104,59 @@ export function BookingWizard({ initialExperienceSlug }: BookingWizardProps) {
   useEffect(() => {
     if (!selectedExpId || !bookingDate) return;
     let active = true;
+
+    const buildStaticSlots = () => {
+      const list: TimeSlotAvailability[] = [];
+      for (let h = 10; h + durationHours <= 23; h++) {
+        list.push({
+          startTime: `${String(h).padStart(2, '0')}:00`,
+          endTime: `${String(h + durationHours).padStart(2, '0')}:00`,
+          availableCount: 1,
+          totalStations: 1,
+          isAvailable: true,
+        });
+      }
+      return list;
+    };
+
+    if (isStaticMode) {
+      setSlots(buildStaticSlots());
+      setAvailabilityMode('enquiry_pending');
+      setSlotsLoading(false);
+      return;
+    }
+
     setSlotsLoading(true);
     fetch(
       `/api/bookings/availability?experienceId=${selectedExpId}&date=${encodeURIComponent(
         bookingDate
       )}&duration=${durationHours}`
     )
-      .then((r) => r.json())
+      .then(async (r) => {
+        const ct = r.headers.get('content-type') || '';
+        if (!r.ok || !ct.includes('application/json')) {
+          throw new Error('Static host');
+        }
+        return r.json();
+      })
       .then((json) => {
         if (!active) return;
         setSlots(json.slots || []);
         setAvailabilityMode(json.availabilityMode || 'enquiry_pending');
-        if (startTime && !(json.slots || []).some((s: TimeSlotAvailability) => s.startTime === startTime && s.isAvailable)) {
+        if (
+          startTime &&
+          !(json.slots || []).some(
+            (s: TimeSlotAvailability) => s.startTime === startTime && s.isAvailable
+          )
+        ) {
           setStartTime('');
         }
       })
       .catch(() => {
-        if (active) setSlots([]);
+        if (active) {
+          setSlots(buildStaticSlots());
+          setAvailabilityMode('enquiry_pending');
+        }
       })
       .finally(() => {
         if (active) setSlotsLoading(false);
@@ -128,7 +164,7 @@ export function BookingWizard({ initialExperienceSlug }: BookingWizardProps) {
     return () => {
       active = false;
     };
-  }, [selectedExpId, bookingDate, durationHours]);
+  }, [selectedExpId, bookingDate, durationHours, isStaticMode]);
 
   const selectedExperience = experiences.find((e) => e.id === selectedExpId);
   const todayMin = new Date().toISOString().slice(0, 10);
@@ -136,6 +172,34 @@ export function BookingWizard({ initialExperienceSlug }: BookingWizardProps) {
   const handleConfirmBooking = async () => {
     setFormError(null);
     setSubmitting(true);
+
+    const buildStaticEnquiryConfirmation = () => {
+      const startH = Number(startTime.split(':')[0] || 10);
+      const endTime = `${String(startH + durationHours).padStart(2, '0')}:00`;
+      const ref = `INF-${bookingDate.replace(/-/g, '')}-ENQ`;
+      setConfirmedBooking({
+        bookingRef: ref,
+        experienceName: selectedExperience?.name || 'Gaming Session',
+        stationName: 'Enquiry Queue',
+        bookingDate,
+        startTime,
+        endTime,
+        durationHours,
+        playerCount,
+        customerName,
+        customerPhone,
+        paymentMethod,
+        status: 'pending',
+        availabilityMode: 'enquiry_pending',
+      });
+    };
+
+    if (isStaticMode) {
+      buildStaticEnquiryConfirmation();
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const res = await fetch('/api/bookings', {
         method: 'POST',
@@ -153,6 +217,11 @@ export function BookingWizard({ initialExperienceSlug }: BookingWizardProps) {
           paymentMethod,
         }),
       });
+      const ct = res.headers.get('content-type') || '';
+      if (!ct.includes('application/json')) {
+        buildStaticEnquiryConfirmation();
+        return;
+      }
       const json = await res.json();
       if (!res.ok) {
         setFormError(json.error || 'Could not complete booking.');
@@ -160,7 +229,7 @@ export function BookingWizard({ initialExperienceSlug }: BookingWizardProps) {
       }
       setConfirmedBooking(json.booking);
     } catch {
-      setFormError('Network error while submitting your booking. Please try again.');
+      buildStaticEnquiryConfirmation();
     } finally {
       setSubmitting(false);
     }

@@ -99,11 +99,16 @@ function AnimatedRoutes() {
 }
 
 export default function App() {
+  const routerBase =
+    typeof window !== 'undefined' && window.location.pathname.startsWith('/demo-website')
+      ? '/demo-website'
+      : '/';
+
   return (
     <MotionConfig reducedMotion="user">
       <AuthProvider>
         <VenueProvider>
-          <BrowserRouter basename="/demo-website">
+          <BrowserRouter basename={routerBase}>
             <ScrollToTop />
 
             <div className="min-h-screen flex flex-col bg-[#090B10] text-slate-100">

@@ -1,0 +1,6 @@
+{
+  "name": "Infinity Gaming Zone & Cafe",
+  "description": "Premium gaming lounge, PC & console arena, VIP suites, cafe menu, tournaments, and live session booking platform in Bhagalpur, Bihar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
